@@ -1,0 +1,146 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
+-- TOGGLE SETTINGS
+local progressEnabled = true
+local toggleKey = Enum.KeyCode.P
+
+-- TOGGLE FUNCTION
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == toggleKey then
+		progressEnabled = not progressEnabled
+		print("Progress toggled:", progressEnabled)
+
+		-- Toggle both Highlights and ProgressBars
+		for _, descendant in ipairs(Workspace:GetDescendants()) do
+			if descendant:IsA("BillboardGui") and descendant.Name == "ProgressBar" then
+				descendant.Enabled = progressEnabled
+			elseif descendant:IsA("Highlight") and descendant.Name == "ComputerHighlight" then
+				descendant.Enabled = progressEnabled
+			end
+		end
+	end
+end)
+
+-- CREATE PROGRESS BAR
+local function createProgressBar(parent)
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "ProgressBar"
+	billboard.Adornee = parent
+	billboard.Size = UDim2.new(0, 120, 0, 12)
+	billboard.StudsOffset = Vector3.new(0, 4.2, 0)
+	billboard.AlwaysOnTop = true
+	billboard.Enabled = progressEnabled
+	billboard.Parent = parent
+
+	local background = Instance.new("Frame")
+	background.Size = UDim2.new(1, 0, 1, 0)
+	background.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+	background.BorderSizePixel = 2
+	background.BorderColor3 = Color3.fromRGB(255, 255, 255)
+	background.Parent = billboard
+
+	local bar = Instance.new("Frame")
+	bar.Name = "Bar"
+	bar.Size = UDim2.new(0, 0, 1, 0)
+	bar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	bar.BorderSizePixel = 0
+	bar.Parent = background
+
+	local text = Instance.new("TextLabel")
+	text.Name = "ProgressText"
+	text.Size = UDim2.new(1, 0, 1, 0)
+	text.BackgroundTransparency = 1
+	text.TextColor3 = Color3.fromRGB(255, 255, 255)
+	text.TextStrokeTransparency = 0
+	text.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	text.TextScaled = true
+	text.Font = Enum.Font.SciFi
+	text.Text = "0.0%"
+	text.Parent = background
+
+	return billboard, bar, text
+end
+
+-- COMPUTER SETUP
+local function setupComputer(tableModel)
+	if tableModel:FindFirstChild("ProgressBar") then return end
+
+	local billboard, bar, text = createProgressBar(tableModel)
+	local highlight = tableModel:FindFirstChildOfClass("Highlight") or Instance.new("Highlight")
+	highlight.Name = "ComputerHighlight"
+	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	highlight.Enabled = progressEnabled
+	highlight.Parent = tableModel
+
+	local savedProgress = 0
+
+	RunService.Heartbeat:Connect(function()
+		if not progressEnabled then return end
+
+		local screen = tableModel:FindFirstChild("Screen")
+		if screen and screen:IsA("BasePart") then
+			highlight.FillColor = screen.Color
+			highlight.OutlineColor = screen.Color
+		end
+
+		local highestTouch = 0
+		for _, part in ipairs(tableModel:GetChildren()) do
+			if part:IsA("BasePart") and part.Name:match("^ComputerTrigger") then
+				for _, touchingPart in ipairs(part:GetTouchingParts()) do
+					local plr = Players:GetPlayerFromCharacter(touchingPart.Parent)
+					if plr then
+						local tpsm = plr:FindFirstChild("TempPlayerStatsModule")
+						if tpsm then
+							local ragdoll = tpsm:FindFirstChild("Ragdoll")
+							local ap = tpsm:FindFirstChild("ActionProgress")
+							if ragdoll and typeof(ragdoll.Value) == "boolean" and not ragdoll.Value then
+								if ap and typeof(ap.Value) == "number" then
+									highestTouch = math.max(highestTouch, ap.Value)
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+
+		savedProgress = math.max(savedProgress, highestTouch)
+		bar.Size = UDim2.new(savedProgress, 0, 1, 0)
+
+		if savedProgress >= 1 then
+			bar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+			text.Text = "COMPLETED"
+		else
+			bar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+			text.Text = string.format("%.1f%%", math.floor(savedProgress * 200 + 0.1) / 2)
+		end
+	end)
+end
+
+-- CONTINUOUS COMPUTER RELOAD
+local function reloadComputers()
+	task.spawn(function()
+		while true do
+			local currentMap = ReplicatedStorage:WaitForChild("CurrentMap")
+			local mapName = tostring(currentMap.Value)
+			if mapName and mapName ~= "" then
+				local map = Workspace:FindFirstChild(mapName)
+				if map then
+					for _, obj in ipairs(map:GetChildren()) do
+						if obj.Name == "ComputerTable" then
+							setupComputer(obj)
+						end
+					end
+				end
+			end
+			task.wait(1)
+		end
+	end)
+end
+
+reloadComputers()
